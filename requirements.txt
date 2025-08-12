@@ -1,4 +1,8 @@
 streamlit
 langchain
-langchain-google-genai  
-python-dotenv
+langchain-google-genai
+langchain-community
+faiss-cpu
+sentence-transformers
+pypdf
+langchain_huggingface
