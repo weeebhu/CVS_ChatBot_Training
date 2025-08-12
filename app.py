@@ -3,8 +3,10 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.documents import Document
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
+from langchain.agents import initialize_agent, AgentType
+from langchain_core.tools import Tool
 from config.config import GEMINI_API_KEY
 
 # loading file 
@@ -26,9 +28,17 @@ embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
 # Vector storage
 vectorstore = FAISS.from_documents(all_splits, embeddings)
 
-st.set_page_config(page_title = "BMW Chatbot")
+# Define Retrieval Tool
+def retrieve_info(query: str):
+    retriever = vectorstore.as_retriever(search_kwargs={"k":3})
+    docs = retriever.get_relevant_documents(query)
+    return "\n\n".join([doc.page_content for doc in docs])
 
-st.title("BMW Chatbot")
+retrieval_tool = Tool(
+    name="BMW_PDF_Search",
+    func=retrieve_info,
+    description="Use this to search the BMW M Series PDF for relevant information."
+) 
 
 llm = ChatGoogleGenerativeAI(
     model="gemini-2.5-flash",
@@ -36,54 +46,22 @@ llm = ChatGoogleGenerativeAI(
     google_api_key=GEMINI_API_KEY
 )
 
+# Agent
+agent = initialize_agent(
+    tools = [retrieval_tool],
+    llm = llm,
+    agent = AgentType.ZERO_SHOT_REACT_DESCRIPTION,
+    verbose=True
+)
+
+# Streamlit UI
+st.set_page_config(page_title = "BMW Chatbot")
+st.title("BMW Chatbot")
+
 # User input
-user_input = st.text_input("Type your message here...")
+user_input = st.text_input("Ask about the BMW M Series...")
 
 if st.button("Send") and user_input:
-    # Retrive relevant chunks
-    retriever = vectorstore.as_retriever(search_kwargs={"k":3})
-    relevent_docs = retriever.get_relevant_documents(user_input)
-
-    def score_doc(doc, query):
-        # Simple prompt to score relevance 0-100 (example)
-        scoring_prompt = f"""
-        On a scale from 0 to 100, how relevant is the following text to the question?  
-        Text: \"\"\"{doc.page_content}\"\"\"
-        Question: \"\"\"{query}\"\"\"
-        Relevance score (only a number):
-        """
-        response = llm.invoke(scoring_prompt)
-        try:
-            score = int(''.join(filter(str.isdigit, response.content)))
-        except:
-            score = 0
-        return score
-    
-    # Score all candidates
-    scored_docs = [(doc, score_doc(doc, user_input)) for doc in relevent_docs]
-    # Sort by score descending
-    scored_docs = sorted(scored_docs, key=lambda x: x[1], reverse=True)
-
-    # Step 3: Take top 3 reranked docs
-    top_docs = [doc for doc, score in scored_docs[:3]]
-
-    # Combine top docs into context
-    context_text = "\n\n".join([doc.page_content for doc in top_docs])
-
-    # # combine docs into context
-    # context_text ="\n\n".join([doc.page_content for doc in relevent_docs])
-
-    # Create final prompt
-
-    prompt_template="""
-    you are a helpful assistant. use the following context from the PDF to answer the question.
-    Context:
-    {context}
-
-    Question: {question}
-"""
-    prompt = prompt_template.format(context=context_text, question=user_input)
-
-    # Get answer
-    response = llm.invoke(prompt)  # LangChain's ChatGoogleGenerativeAI returns natural text
-    st.markdown(f"**ChatBot:** {response.content}")
+    with st.spinner("Thinking..."):
+        response = agent.run(user_input)
+    st.markdown(f"**ChatBot:** {response}")
