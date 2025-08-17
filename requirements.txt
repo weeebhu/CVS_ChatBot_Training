@@ -2,7 +2,12 @@ streamlit
 langchain
 langchain-google-genai
 langchain-community
-faiss-cpu
+langchain-core
+langchain-huggingface
+langchain-qdrant
+langgraph
+langgraph-supervisor
+qdrant-client
 sentence-transformers
-pypdf
-langchain_huggingface
+requests
+langchain-text-splitters
